@@ -64,7 +64,14 @@ const STORAGE_KEY = "esl_hub_students";
 function loadStudents() {
   if (typeof window === "undefined") return {};
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    // Merge each student with blankStudent defaults to fill missing fields
+    const defaults = blankStudent();
+    const safe = {};
+    for (const [id, s] of Object.entries(raw)) {
+      safe[id] = { ...defaults, ...s };
+    }
+    return safe;
   } catch {
     return {};
   }
