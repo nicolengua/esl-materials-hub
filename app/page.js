@@ -10,14 +10,15 @@ import { buildPrompt, MATERIAL_TYPES } from "../lib/prompt";
 
 // ─── Tiny components ───────────────────────────────────────────
 
-function TagSelect({ options, selected, onChange }) {
+function TagSelect({ options, selected = [], onChange }) {
+  const sel = Array.isArray(selected) ? selected : [];
   const toggle = (v) => {
-    onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v]);
+    onChange(sel.includes(v) ? sel.filter((x) => x !== v) : [...sel, v]);
   };
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-      {options.map((o) => (
-        <span key={o} className={`tag ${selected.includes(o) ? "active" : ""}`} onClick={() => toggle(o)}>
+      {(options || []).map((o) => (
+        <span key={o} className={`tag ${sel.includes(o) ? "active" : ""}`} onClick={() => toggle(o)}>
           {o}
         </span>
       ))}
@@ -25,10 +26,10 @@ function TagSelect({ options, selected, onChange }) {
   );
 }
 
-function RadioSelect({ options, value, onChange }) {
+function RadioSelect({ options = [], value = "", onChange }) {
   return (
     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-      {options.map((o) => (
+      {(options || []).map((o) => (
         <span key={o} className={`tag ${value === o ? "active" : ""}`} onClick={() => onChange(value === o ? "" : o)}>
           {o}
         </span>
