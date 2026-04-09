@@ -176,7 +176,7 @@ export default function Home() {
     const w = window.open("", "_blank");
     w.document.write(`<!DOCTYPE html><html><head>
       <meta charset="utf-8">
-      <title>Materials — ${students[genId]?.name}</title>
+      <title>Nick's Class ${new Date().toLocaleDateString('en-US', { month: 'long' })} ${String(new Date().getDate()).padStart(2, '0')} - ${students[genId]?.name || 'Student'}</title>
       <style>
         body { font-family: Georgia, serif; max-width: 720px; margin: 40px auto; padding: 0 24px; color: #222; line-height: 1.6; }
         h1 { font-size: 22px; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 24px; }

@@ -38,7 +38,10 @@ export async function POST(request) {
       .map((b) => b.text)
       .join("\n");
 
-    return NextResponse.json({ html: text });
+    // Strip markdown code fences Claude sometimes wraps HTML in
+    const clean = text.replace(/^```html\s*\n?/, "").replace(/\n?```\s*$/, "");
+
+    return NextResponse.json({ html: clean });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
