@@ -8,6 +8,46 @@ import {
 } from "../lib/constants";
 import { buildPrompt, MATERIAL_TYPES } from "../lib/prompt";
 
+// ─── Materials CSS (shared between preview and print) ─────────
+
+const MATERIALS_CSS = `
+  .materials-content { font-family: Georgia, "Times New Roman", serif; color: #222; line-height: 1.6; }
+  .materials-content h1 { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 22px; color: #222; border-bottom: 2px solid #333; padding-bottom: 8px; margin: 0 0 4px 0; }
+  .materials-content .doc-meta { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 13px; color: #666; margin-bottom: 28px; line-height: 1.5; }
+  .materials-content h2 { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 17px; font-weight: 600; color: #333; margin: 0 0 12px 0; }
+  .materials-content h3 { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 15px; font-weight: 600; color: #444; margin: 20px 0 8px 0; }
+  .materials-content p { font-size: 14px; margin: 8px 0; }
+  .materials-content li { font-size: 14px; margin: 4px 0; }
+  .materials-content ol, .materials-content ul { margin-left: 20px; padding-left: 0; }
+  .materials-content a { color: #2a5a8a; }
+
+  .materials-content .section { margin-bottom: 32px; }
+
+  .materials-content .vocab-box { border: 1px solid #d4d0c8; border-radius: 6px; background: #faf9f7; overflow: hidden; }
+  .materials-content .vocab-item { padding: 14px 16px; border-bottom: 1px solid #e8e5df; }
+  .materials-content .vocab-item:last-child { border-bottom: none; }
+  .materials-content .vocab-term { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-weight: 700; font-size: 15px; color: #222; margin-bottom: 4px; }
+  .materials-content .vocab-def { font-size: 13px; color: #444; margin-bottom: 6px; }
+  .materials-content .vocab-example { font-size: 13px; color: #555; margin-bottom: 6px; padding-left: 12px; border-left: 2px solid #d4d0c8; }
+  .materials-content .vocab-l1 { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 12px; color: #777; }
+  .materials-content .vocab-note { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 12px; color: #996600; margin-top: 4px; font-style: italic; }
+
+  .materials-content .reading-box { border: 1px solid #d4d0c8; border-radius: 6px; background: #faf9f7; padding: 20px; }
+  .materials-content .reading-box p { font-size: 14px; margin: 0 0 12px 0; }
+  .materials-content .reading-box p:last-child { margin-bottom: 0; }
+
+  .materials-content .explain-box { border: 1px solid #b8cfe5; border-radius: 6px; background: #f0f5fa; padding: 16px 18px; margin-bottom: 20px; }
+  .materials-content .explain-title { font-family: -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; font-weight: 700; font-size: 14px; color: #2a5a8a; margin-bottom: 8px; }
+  .materials-content .explain-box p { font-size: 14px; color: #333; }
+
+  .materials-content .exercise-block { margin-bottom: 16px; }
+
+  .materials-content .answer-key { margin-top: 28px; padding-top: 16px; border-top: 1px dashed #bbb; }
+  .materials-content .answer-key h3 { color: #888; font-size: 14px; }
+  .materials-content .answer-key p { font-size: 13px; color: #666; }
+  .materials-content .answer-key ol { font-size: 13px; color: #666; }
+`;
+
 // ─── Tiny components ───────────────────────────────────────────
 
 function TagSelect({ options, selected = [], onChange }) {
@@ -137,7 +177,7 @@ export default function Home() {
   function openGenerate(id) {
     setGenId(id);
     setClassNotes("");
-    setSelectedMaterials(["Post-class review summary", "Vocabulary worksheet"]);
+    setSelectedMaterials(["Post-class summary", "Vocabulary — words & phrases"]);
     setGeneratedHtml("");
     setError("");
     setView("generate");
@@ -173,24 +213,21 @@ export default function Home() {
   }
 
   function handlePrint() {
+    const now = new Date();
+    const monthName = now.toLocaleDateString('en-US', { month: 'long' });
+    const day = String(now.getDate()).padStart(2, '0');
+    const studentName = students[genId]?.name || 'Student';
+
     const w = window.open("", "_blank");
     w.document.write(`<!DOCTYPE html><html><head>
       <meta charset="utf-8">
-      <title>Nick's Class ${new Date().toLocaleDateString('en-US', { month: 'long' })} ${String(new Date().getDate()).padStart(2, '0')} - ${students[genId]?.name || 'Student'}</title>
+      <title>Nick's Class ${monthName} ${day} - ${studentName}</title>
       <style>
-        body { font-family: Georgia, serif; max-width: 720px; margin: 40px auto; padding: 0 24px; color: #222; line-height: 1.6; }
-        h1 { font-size: 22px; border-bottom: 2px solid #333; padding-bottom: 8px; margin-bottom: 24px; }
-        h2 { font-size: 17px; color: #444; margin-top: 32px; margin-bottom: 12px; }
-        h3 { font-size: 15px; margin-top: 20px; }
-        ol, ul { margin-left: 20px; }
-        table { border-collapse: collapse; width: 100%; margin: 12px 0; }
-        th, td { border: 1px solid #ccc; padding: 8px 10px; text-align: left; font-size: 14px; }
-        th { background: #f5f5f0; font-weight: 600; }
-        p { margin: 8px 0; }
-        .answer-line { border-bottom: 1px solid #999; display: inline-block; min-width: 120px; height: 20px; }
+        body { max-width: 720px; margin: 40px auto; padding: 0 24px; }
+        ${MATERIALS_CSS}
         @media print { body { margin: 20px; } }
       </style>
-    </head><body>${generatedHtml}</body></html>`);
+    </head><body><div class="materials-content">${generatedHtml}</div></body></html>`);
     w.document.close();
     w.print();
   }
@@ -206,6 +243,9 @@ export default function Home() {
 
   return (
     <div className="container">
+      {/* Materials CSS for preview */}
+      <style dangerouslySetInnerHTML={{ __html: MATERIALS_CSS }} />
+
       {/* Header */}
       <div style={{ marginBottom: 32 }}>
         <h1 style={{ fontFamily: "var(--font-display)", fontSize: 28, fontWeight: 700, marginBottom: 4 }}>
@@ -403,7 +443,7 @@ export default function Home() {
             <button className="btn btn-secondary" onClick={() => setView("list")}>Home</button>
           </div>
           <div className="card" style={{ padding: "32px 28px" }}>
-            <div dangerouslySetInnerHTML={{ __html: generatedHtml }} />
+            <div className="materials-content" dangerouslySetInnerHTML={{ __html: generatedHtml }} />
           </div>
         </div>
       )}
