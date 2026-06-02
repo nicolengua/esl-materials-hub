@@ -246,6 +246,7 @@ export default function Home() {
           <div style={{ marginBottom: 16, display: "flex", gap: 10, alignItems: "center" }}>
             <button className="btn btn-primary" onClick={openNewStudent}>+ Add student</button>
             <button className="btn btn-secondary" onClick={exportData} disabled={loading || sorted.length === 0} title="Download a backup file of all your students">Export my data</button>
+            <a className="btn btn-secondary" href="/api/sample-docx" style={{ marginLeft: "auto", textDecoration: "none" }} title="Phase 2 test: download a sample Word document to check the design">⬇ Sample sheet (test)</a>
           </div>
           {loadError && <div className="card" style={{ padding: "14px 18px", marginBottom: 12, color: "var(--danger)", background: "#fff4f4", borderColor: "var(--danger)" }}>{loadError}</div>}
           {loading && <div className="card" style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-tertiary)" }}><span className="spinner" /> Loading your students…</div>}
