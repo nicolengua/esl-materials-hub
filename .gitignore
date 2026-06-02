@@ -18,3 +18,4 @@ out/
 # OS junk
 .DS_Store
 **/.DS_Store
+.env*

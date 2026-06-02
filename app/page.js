@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import {
   DAILY_LANGUAGE, ENGLISH_NEEDS, URGENCY, EXAM_TYPES,
   SPEAKS_TO, COMMUNICATION_WHERE, DIFFICULTIES, ENGLISH_AT_WORK_HOW,
@@ -83,25 +83,36 @@ function Field({ label, children }) {
   );
 }
 
-const STORAGE_KEY = "esl_hub_students";
+// --- Storage: students now live in the cloud database, read/written via the API. ---
 
-function loadStudents() {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
-    const defaults = blankStudent();
-    const safe = {};
-    for (const [id, s] of Object.entries(raw)) {
-      safe[id] = { ...defaults, ...s };
-    }
-    return safe;
-  } catch {
-    return {};
+async function fetchStudents() {
+  const res = await fetch("/api/students");
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+  const defaults = blankStudent();
+  const safe = {};
+  for (const [id, s] of Object.entries(data.students || {})) {
+    safe[id] = { ...defaults, ...s };
   }
+  return safe;
 }
 
-function saveStudents(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+async function apiSaveStudent(id, student) {
+  const res = await fetch("/api/students", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ id, student }),
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
+}
+
+async function apiDeleteStudent(id) {
+  const res = await fetch(`/api/students?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error);
 }
 
 export default function Home() {
@@ -115,24 +126,60 @@ export default function Home() {
   const [generating, setGenerating] = useState(false);
   const [generatedHtml, setGeneratedHtml] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => { setStudents(loadStudents()); }, []);
-
-  const persist = useCallback((next) => { setStudents(next); saveStudents(next); }, []);
+  useEffect(() => {
+    let active = true;
+    fetchStudents()
+      .then((data) => { if (active) { setStudents(data); setLoadError(""); } })
+      .catch((e) => { if (active) setLoadError(e.message); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   function openNewStudent() { setForm(blankStudent()); setEditId(null); setView("form"); }
   function openEditStudent(id) { setForm({ ...blankStudent(), ...students[id] }); setEditId(id); setView("form"); }
 
-  function saveStudent() {
+  async function saveStudent() {
     if (!form.name.trim()) return;
     const id = editId || "s_" + Date.now();
-    persist({ ...students, [id]: { ...form } });
-    setView("list");
+    const student = { ...form };
+    setSaving(true); setLoadError("");
+    try {
+      await apiSaveStudent(id, student);
+      setStudents((prev) => ({ ...prev, [id]: student }));
+      setView("list");
+    } catch (e) {
+      setLoadError("Could not save: " + e.message);
+    } finally {
+      setSaving(false);
+    }
   }
 
-  function deleteStudent(id) {
+  async function deleteStudent(id) {
     if (!confirm(`Delete ${students[id]?.name}?`)) return;
-    const next = { ...students }; delete next[id]; persist(next);
+    try {
+      await apiDeleteStudent(id);
+      setStudents((prev) => { const next = { ...prev }; delete next[id]; return next; });
+    } catch (e) {
+      setLoadError("Could not delete: " + e.message);
+    }
+  }
+
+  function exportData() {
+    const now = new Date();
+    const stamp = now.toISOString().slice(0, 10);
+    const blob = new Blob([JSON.stringify(students, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `esl-hub-students-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   function openGenerate(id) {
@@ -196,9 +243,14 @@ export default function Home() {
 
       {view === "list" && (
         <div className="fade-in">
-          <div style={{ marginBottom: 16 }}><button className="btn btn-primary" onClick={openNewStudent}>+ Add student</button></div>
-          {sorted.length === 0 && <div className="card" style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-tertiary)" }}>No students yet. Add your first one above.</div>}
-          {sorted.length > 0 && (
+          <div style={{ marginBottom: 16, display: "flex", gap: 10, alignItems: "center" }}>
+            <button className="btn btn-primary" onClick={openNewStudent}>+ Add student</button>
+            <button className="btn btn-secondary" onClick={exportData} disabled={loading || sorted.length === 0} title="Download a backup file of all your students">Export my data</button>
+          </div>
+          {loadError && <div className="card" style={{ padding: "14px 18px", marginBottom: 12, color: "var(--danger)", background: "#fff4f4", borderColor: "var(--danger)" }}>{loadError}</div>}
+          {loading && <div className="card" style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-tertiary)" }}><span className="spinner" /> Loading your students…</div>}
+          {!loading && sorted.length === 0 && !loadError && <div className="card" style={{ padding: "48px 24px", textAlign: "center", color: "var(--text-tertiary)" }}>No students yet. Add your first one above.</div>}
+          {!loading && sorted.length > 0 && (
             <div className="card">
               {sorted.map(([id, s]) => {
                 const levelShort = getStudentLevel(s);
@@ -334,7 +386,7 @@ export default function Home() {
             </Section>
 
             <div style={{ padding: 20, display: "flex", gap: 10 }}>
-              <button className="btn btn-primary" onClick={saveStudent}>{editId ? "Save changes" : "Add student"}</button>
+              <button className="btn btn-primary" onClick={saveStudent} disabled={saving || !form.name.trim()}>{saving ? <><span className="spinner" /> Saving…</> : (editId ? "Save changes" : "Add student")}</button>
               <button className="btn btn-secondary" onClick={() => setView("list")}>Cancel</button>
               {editId && <button className="btn btn-danger" style={{ marginLeft: "auto" }} onClick={() => { deleteStudent(editId); setView("list"); }}>Delete</button>}
             </div>
