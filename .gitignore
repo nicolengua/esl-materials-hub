@@ -1,0 +1,20 @@
+# Reference materials — contains real student data backup. NEVER upload to GitHub.
+_reference/
+
+# Dependencies
+node_modules/
+
+# Next.js build output
+.next/
+out/
+
+# Environment / secret keys
+.env
+.env*.local
+
+# Vercel
+.vercel
+
+# OS junk
+.DS_Store
+**/.DS_Store
