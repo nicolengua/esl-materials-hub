@@ -7,7 +7,7 @@ import {
   LEVELS, LESSON_PREFS, PRACTICE_REALISTIC, PRACTICE_TIME,
   FEEDBACK_PREF, blankStudent,
 } from "../lib/constants";
-import { buildPrompt, MATERIAL_TYPES } from "../lib/prompt";
+import { sheetToHtml } from "../lib/preview";
 
 const MATERIALS_CSS = `
   .materials-content { font-family: Georgia, "Times New Roman", serif; color: #222; line-height: 1.6; }
@@ -122,9 +122,9 @@ export default function Home() {
   const [form, setForm] = useState(blankStudent());
   const [genId, setGenId] = useState(null);
   const [classNotes, setClassNotes] = useState("");
-  const [selectedMaterials, setSelectedMaterials] = useState([]);
   const [generating, setGenerating] = useState(false);
-  const [generatedHtml, setGeneratedHtml] = useState("");
+  const [downloading, setDownloading] = useState(false);
+  const [sheet, setSheet] = useState(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -184,39 +184,45 @@ export default function Home() {
 
   function openGenerate(id) {
     setGenId(id); setClassNotes("");
-    setSelectedMaterials(["Post-class summary", "Vocabulary \u2014 words & phrases"]);
-    setGeneratedHtml(""); setError(""); setView("generate");
+    setSheet(null); setError(""); setView("generate");
   }
 
   async function handleGenerate() {
-    if (!classNotes.trim() || !selectedMaterials.length) return;
-    setGenerating(true); setError(""); setGeneratedHtml("");
-    const student = students[genId];
-    const { system, user } = buildPrompt(student, classNotes, selectedMaterials);
+    if (!classNotes.trim()) return;
+    setGenerating(true); setError(""); setSheet(null);
     try {
       const res = await fetch("/api/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ system, userMessage: user }),
+        body: JSON.stringify({ studentId: genId, classNotes }),
       });
       const data = await res.json();
       if (data.error) { setError(data.error); }
-      else { setGeneratedHtml(data.html); setView("preview"); }
+      else { setSheet(data); setView("preview"); }
     } catch (e) { setError("Network error: " + e.message); }
     finally { setGenerating(false); }
   }
 
-  function handlePrint() {
-    const now = new Date();
-    const monthName = now.toLocaleDateString('en-US', { month: 'long' });
-    const day = String(now.getDate()).padStart(2, '0');
-    const studentName = students[genId]?.name || 'Student';
-    const w = window.open("", "_blank");
-    w.document.write(`<!DOCTYPE html><html><head>
-      <meta charset="utf-8">
-      <title>Nick's Class ${monthName} ${day} - ${studentName}</title>
-      <style>body { max-width: 720px; margin: 40px auto; padding: 0 24px; }${MATERIALS_CSS}@media print { body { margin: 20px; } }</style>
-    </head><body><div class="materials-content">${generatedHtml}</div></body></html>`);
-    w.document.close(); w.print();
+  async function downloadWord() {
+    if (!sheet) return;
+    setDownloading(true); setError("");
+    try {
+      const res = await fetch("/api/render-docx", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(sheet),
+      });
+      if (!res.ok) { setError("Could not build the Word file."); return; }
+      const blob = await res.blob();
+      const name = sheet.student?.name || "Student";
+      const now = new Date();
+      const month = now.toLocaleDateString("en-US", { month: "long" });
+      const day = String(now.getDate()).padStart(2, "0");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `Nick's Class ${month} ${day} - ${name}.docx`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (e) { setError("Download failed: " + e.message); }
+    finally { setDownloading(false); }
   }
 
   const updateField = (key, val) => setForm((f) => ({ ...f, [key]: val }));
@@ -399,17 +405,14 @@ export default function Home() {
         <div className="fade-in">
           <div className="card" style={{ overflow: "hidden" }}>
             <Section title={`Generate materials for ${students[genId].name}`} subtitle={`${getStudentLevel(students[genId]) || "Level TBD"} · ${students[genId].nativeLanguage || "L1 unknown"}`}>
-              <Field label="Class notes from today *">
-                <textarea value={classNotes} onChange={(e) => setClassNotes(e.target.value)} rows={6}
-                  placeholder={"Paste your class notes here. Include:\n- Vocabulary\n- Idioms/expressions\n- Error corrections\n- Grammar points\n- Other material / links"} />
-              </Field>
-              <Field label="What to generate">
-                <TagSelect options={MATERIAL_TYPES} selected={selectedMaterials} onChange={setSelectedMaterials} />
+              <Field label="Class notes / lesson summary from today *">
+                <textarea value={classNotes} onChange={(e) => setClassNotes(e.target.value)} rows={8}
+                  placeholder={"Paste today's class summary or your notes here — the AI reads this plus the student's profile, history, and language guide, then designs the sheet.\n\nInclude whatever happened: speaking corrections, grammar that came up, vocabulary, the lesson focus, homework ideas, links."} />
               </Field>
             </Section>
             <div style={{ padding: 20, display: "flex", gap: 10, alignItems: "center" }}>
-              <button className="btn btn-primary" onClick={handleGenerate} disabled={generating || !classNotes.trim() || !selectedMaterials.length}>
-                {generating ? <><span className="spinner" /> Generating...</> : "Generate materials"}
+              <button className="btn btn-primary" onClick={handleGenerate} disabled={generating || !classNotes.trim()}>
+                {generating ? <><span className="spinner" /> Designing the sheet… (up to a minute)</> : "Generate sheet"}
               </button>
               <button className="btn btn-secondary" onClick={() => setView("list")}>Cancel</button>
               {error && <span style={{ color: "var(--danger)", fontSize: 13, marginLeft: 12 }}>{error}</span>}
@@ -418,15 +421,21 @@ export default function Home() {
         </div>
       )}
 
-      {view === "preview" && (
+      {view === "preview" && sheet && (
         <div className="fade-in">
-          <div className="no-print" style={{ marginBottom: 16, display: "flex", gap: 10 }}>
-            <button className="btn btn-primary" onClick={handlePrint}>Print / Save as PDF</button>
+          <div className="no-print" style={{ marginBottom: 16, display: "flex", gap: 10, alignItems: "center" }}>
+            <button className="btn btn-primary" onClick={downloadWord} disabled={downloading}>
+              {downloading ? <><span className="spinner" /> Building Word file…</> : "⬇ Download Word (.docx)"}
+            </button>
             <button className="btn btn-secondary" onClick={() => setView("generate")}>← Back to editor</button>
             <button className="btn btn-secondary" onClick={() => setView("list")}>Home</button>
+            {error && <span style={{ color: "var(--danger)", fontSize: 13, marginLeft: 12 }}>{error}</span>}
+          </div>
+          <div style={{ fontSize: 12, color: "var(--text-tertiary)", marginBottom: 8 }}>
+            Quick on-screen preview — the downloaded Word file is the properly formatted version.
           </div>
           <div className="card" style={{ padding: "32px 28px" }}>
-            <div className="materials-content" dangerouslySetInnerHTML={{ __html: generatedHtml }} />
+            <div className="materials-content" dangerouslySetInnerHTML={{ __html: sheetToHtml(sheet) }} />
           </div>
         </div>
       )}

@@ -1,60 +1,29 @@
 import { NextResponse } from "next/server";
+import { ensureSchema, ensureContextSchema, getStudentRow } from "../../../lib/db";
+import { generateSheet } from "../../../lib/generation";
 
-async function callClaude(apiKey, system, userMessage, retriesLeft = 3) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 8000,
-      system: system,
-      messages: [{ role: "user", content: userMessage }],
-    }),
-  });
+export const dynamic = "force-dynamic";
+// Generation with Opus + thinking can take a while — allow up to 5 minutes.
+export const maxDuration = 300;
 
-  // Retry on overloaded (529) or server errors (500+)
-  if (res.status >= 500 && retriesLeft > 0) {
-    const wait = (4 - retriesLeft) * 3000; // 3s, 6s, 9s
-    await new Promise((r) => setTimeout(r, wait));
-    return callClaude(apiKey, system, userMessage, retriesLeft - 1);
-  }
-
-  return res;
-}
-
+// POST /api/generate  body: { studentId, classNotes }
+// Loads the student + history from the database, runs the four-layer generation,
+// and returns the structured sheet { student, sections } for preview/rendering.
 export async function POST(request) {
-  const { system, userMessage } = await request.json();
-
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json(
-      { error: "API key not configured. Set ANTHROPIC_API_KEY in your environment." },
-      { status: 500 }
-    );
-  }
-
   try {
-    const res = await callClaude(apiKey, system, userMessage);
-
-    if (!res.ok) {
-      const err = await res.text();
-      return NextResponse.json({ error: `API error: ${err}` }, { status: res.status });
+    await ensureSchema();
+    await ensureContextSchema();
+    const { studentId, classNotes } = await request.json();
+    if (!classNotes || !classNotes.trim()) {
+      return NextResponse.json({ error: "Class notes are required." }, { status: 400 });
     }
-
-    const data = await res.json();
-    const text = data.content
-      .filter((b) => b.type === "text")
-      .map((b) => b.text)
-      .join("\n");
-
-    // Strip markdown code fences if Claude wraps HTML in them
-    const clean = text.replace(/^```html\s*\n?/, "").replace(/\n?```\s*$/, "");
-
-    return NextResponse.json({ html: clean });
+    const row = await getStudentRow(studentId);
+    if (!row) {
+      return NextResponse.json({ error: "Student not found." }, { status: 404 });
+    }
+    const student = { ...row.data, id: row.id };
+    const sheet = await generateSheet({ student, classNotes, history: row.history });
+    return NextResponse.json({ student: sheet.student, sections: sheet.sections });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
