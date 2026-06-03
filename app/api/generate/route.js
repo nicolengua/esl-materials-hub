@@ -1,29 +1,39 @@
 import { NextResponse } from "next/server";
-import { ensureSchema, ensureContextSchema, getStudentRow } from "../../../lib/db";
+import { ensureSchema, ensureContextSchema, getStudentRow, appendStudentHistory } from "../../../lib/db";
 import { generateSheet } from "../../../lib/generation";
+import { formatIntake } from "../../../lib/intake";
 
 export const dynamic = "force-dynamic";
 // Generation with Opus + thinking can take a while — allow up to 5 minutes.
 export const maxDuration = 300;
 
-// POST /api/generate  body: { studentId, classNotes }
-// Loads the student + history from the database, runs the four-layer generation,
-// and returns the structured sheet { student, sections } for preview/rendering.
+// POST /api/generate  body: { studentId, intake?, classNotes?, saveToHistory? }
+// Loads the student + history, runs the four-layer generation, optionally appends
+// a summary to the student's history, and returns { student, sections, summary }.
 export async function POST(request) {
   try {
     await ensureSchema();
     await ensureContextSchema();
-    const { studentId, classNotes } = await request.json();
-    if (!classNotes || !classNotes.trim()) {
-      return NextResponse.json({ error: "Class notes are required." }, { status: 400 });
+    const { studentId, intake, classNotes, saveToHistory = true } = await request.json();
+
+    const notes = intake ? formatIntake(intake) : (classNotes || "");
+    if (!notes.trim()) {
+      return NextResponse.json({ error: "Please fill in at least one field about today's class." }, { status: 400 });
     }
     const row = await getStudentRow(studentId);
     if (!row) {
       return NextResponse.json({ error: "Student not found." }, { status: 404 });
     }
     const student = { ...row.data, id: row.id };
-    const sheet = await generateSheet({ student, classNotes, history: row.history });
-    return NextResponse.json({ student: sheet.student, sections: sheet.sections });
+    const sheet = await generateSheet({ student, classNotes: notes, history: row.history });
+
+    if (saveToHistory && sheet.summary) {
+      await appendStudentHistory(studentId, {
+        date: sheet.student?.date || new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }),
+        summary: sheet.summary,
+      });
+    }
+    return NextResponse.json({ student: sheet.student, sections: sheet.sections, summary: sheet.summary });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
   }

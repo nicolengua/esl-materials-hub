@@ -8,6 +8,7 @@ import {
   FEEDBACK_PREF, blankStudent,
 } from "../lib/constants";
 import { sheetToHtml } from "../lib/preview";
+import { INTAKE_FIELDS, blankIntake, intakeHasContent } from "../lib/intake";
 
 const MATERIALS_CSS = `
   .materials-content { font-family: Georgia, "Times New Roman", serif; color: #222; line-height: 1.6; }
@@ -121,7 +122,10 @@ export default function Home() {
   const [editId, setEditId] = useState(null);
   const [form, setForm] = useState(blankStudent());
   const [genId, setGenId] = useState(null);
-  const [classNotes, setClassNotes] = useState("");
+  const [intake, setIntake] = useState(blankIntake());
+  const [pasteText, setPasteText] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [saveToHistory, setSaveToHistory] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [sheet, setSheet] = useState(null);
@@ -183,17 +187,46 @@ export default function Home() {
   }
 
   function openGenerate(id) {
-    setGenId(id); setClassNotes("");
+    setGenId(id); setIntake(blankIntake()); setPasteText(""); setSaveToHistory(true);
     setSheet(null); setError(""); setView("generate");
   }
 
+  const updateIntake = (key, val) => setIntake((p) => ({ ...p, [key]: val }));
+
+  async function autoSortPaste() {
+    if (!pasteText.trim()) return;
+    setParsing(true); setError("");
+    try {
+      const res = await fetch("/api/parse-intake", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: pasteText }),
+      });
+      const data = await res.json();
+      if (data.error) { setError(data.error); }
+      else if (data.intake) {
+        // Merge: fill empty fields, append to ones that already have content.
+        setIntake((prev) => {
+          const next = { ...prev };
+          for (const k of Object.keys(data.intake)) {
+            const incoming = (data.intake[k] || "").trim();
+            if (!incoming) continue;
+            next[k] = prev[k]?.trim() ? `${prev[k].trim()}\n${incoming}` : incoming;
+          }
+          return next;
+        });
+        setPasteText("");
+      }
+    } catch (e) { setError("Could not sort: " + e.message); }
+    finally { setParsing(false); }
+  }
+
   async function handleGenerate() {
-    if (!classNotes.trim()) return;
+    if (!intakeHasContent(intake)) return;
     setGenerating(true); setError(""); setSheet(null);
     try {
       const res = await fetch("/api/generate", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentId: genId, classNotes }),
+        body: JSON.stringify({ studentId: genId, intake, saveToHistory }),
       });
       const data = await res.json();
       if (data.error) { setError(data.error); }
@@ -405,13 +438,29 @@ export default function Home() {
         <div className="fade-in">
           <div className="card" style={{ overflow: "hidden" }}>
             <Section title={`Generate materials for ${students[genId].name}`} subtitle={`${getStudentLevel(students[genId]) || "Level TBD"} · ${students[genId].nativeLanguage || "L1 unknown"}`}>
-              <Field label="Class notes / lesson summary from today *">
-                <textarea value={classNotes} onChange={(e) => setClassNotes(e.target.value)} rows={8}
-                  placeholder={"Paste today's class summary or your notes here — the AI reads this plus the student's profile, history, and language guide, then designs the sheet.\n\nInclude whatever happened: speaking corrections, grammar that came up, vocabulary, the lesson focus, homework ideas, links."} />
+              <Field label="Paste a Granola summary (optional)">
+                <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={4}
+                  placeholder={"Paste a whole class summary here and click ‘Auto-sort into fields’ — the app sorts it into the boxes below for you to tweak. Or just fill the fields directly."} />
+                <div style={{ marginTop: 8 }}>
+                  <button className="btn btn-secondary btn-sm" onClick={autoSortPaste} disabled={parsing || !pasteText.trim()}>
+                    {parsing ? <><span className="spinner" /> Sorting…</> : "↧ Auto-sort into fields"}
+                  </button>
+                </div>
               </Field>
             </Section>
+            <Section title="Today's class" subtitle="Fill what's relevant — the AI designs the sheet around this, the student's profile, history, and language guide">
+              {INTAKE_FIELDS.map((f) => (
+                <Field key={f.key} label={f.label}>
+                  <textarea value={intake[f.key]} onChange={(e) => updateIntake(f.key, e.target.value)} rows={f.rows} placeholder={f.placeholder} />
+                </Field>
+              ))}
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)", marginTop: 8, cursor: "pointer" }}>
+                <input type="checkbox" checked={saveToHistory} onChange={(e) => setSaveToHistory(e.target.checked)} style={{ width: "auto" }} />
+                Save a summary of this sheet to {students[genId].name}&apos;s history (so future sheets build on it). Uncheck when just testing.
+              </label>
+            </Section>
             <div style={{ padding: 20, display: "flex", gap: 10, alignItems: "center" }}>
-              <button className="btn btn-primary" onClick={handleGenerate} disabled={generating || !classNotes.trim()}>
+              <button className="btn btn-primary" onClick={handleGenerate} disabled={generating || !intakeHasContent(intake)}>
                 {generating ? <><span className="spinner" /> Designing the sheet… (up to a minute)</> : "Generate sheet"}
               </button>
               <button className="btn btn-secondary" onClick={() => setView("list")}>Cancel</button>
