@@ -245,13 +245,16 @@ export default function Home() {
       });
       if (!res.ok) { setError("Could not build the Word file."); return; }
       const blob = await res.blob();
-      const name = sheet.student?.name || "Student";
-      const now = new Date();
-      const month = now.toLocaleDateString("en-US", { month: "long" });
-      const day = String(now.getDate()).padStart(2, "0");
+      // Use the filename the server set (single source of truth), handling accents.
+      const cd = res.headers.get("Content-Disposition") || "";
+      let filename = "";
+      const star = cd.match(/filename\*=UTF-8''([^;]+)/i);
+      if (star) { try { filename = decodeURIComponent(star[1]); } catch { filename = ""; } }
+      if (!filename) { const m = cd.match(/filename="?([^";]+)"?/i); if (m) filename = m[1]; }
+      if (!filename) filename = `Nick's Class - ${sheet.student?.name || "Student"}.docx`;
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url; a.download = `Nick's Class ${month} ${day} - ${name}.docx`;
+      a.href = url; a.download = filename;
       document.body.appendChild(a); a.click(); document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch (e) { setError("Download failed: " + e.message); }
