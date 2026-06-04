@@ -241,7 +241,7 @@ export default function Home() {
     try {
       const res = await fetch("/api/render-docx", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(sheet),
+        body: JSON.stringify({ ...sheet, studentId: genId, saveToHistory }),
       });
       if (!res.ok) { setError("Could not build the Word file."); return; }
       const blob = await res.blob();
@@ -459,7 +459,7 @@ export default function Home() {
               ))}
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "var(--text-secondary)", marginTop: 8, cursor: "pointer" }}>
                 <input type="checkbox" checked={saveToHistory} onChange={(e) => setSaveToHistory(e.target.checked)} style={{ width: "auto" }} />
-                Save a summary of this sheet to {students[genId].name}&apos;s history (so future sheets build on it). Uncheck when just testing.
+                When I download this sheet, save a summary to {students[genId].name}&apos;s history (so future sheets build on it). Re-generating never saves on its own. Uncheck if this is just a test.
               </label>
             </Section>
             <div style={{ padding: 20, display: "flex", gap: 10, alignItems: "center" }}>

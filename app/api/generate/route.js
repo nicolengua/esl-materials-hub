@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { ensureSchema, ensureContextSchema, getStudentRow, appendStudentHistory } from "../../../lib/db";
+import { ensureSchema, ensureContextSchema, getStudentRow } from "../../../lib/db";
 import { generateSheet } from "../../../lib/generation";
 import { formatIntake } from "../../../lib/intake";
 
@@ -14,7 +14,7 @@ export async function POST(request) {
   try {
     await ensureSchema();
     await ensureContextSchema();
-    const { studentId, intake, classNotes, saveToHistory = true } = await request.json();
+    const { studentId, intake, classNotes } = await request.json();
 
     const notes = intake ? formatIntake(intake) : (classNotes || "");
     if (!notes.trim()) {
@@ -25,14 +25,8 @@ export async function POST(request) {
       return NextResponse.json({ error: "Student not found." }, { status: 404 });
     }
     const student = { ...row.data, id: row.id };
+    // History is recorded on download, not here, so re-generating never writes phantom history.
     const sheet = await generateSheet({ student, classNotes: notes, history: row.history });
-
-    if (saveToHistory && sheet.summary) {
-      await appendStudentHistory(studentId, {
-        date: sheet.student?.date || new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" }),
-        summary: sheet.summary,
-      });
-    }
     return NextResponse.json({ student: sheet.student, sections: sheet.sections, summary: sheet.summary });
   } catch (e) {
     return NextResponse.json({ error: e.message }, { status: 500 });
