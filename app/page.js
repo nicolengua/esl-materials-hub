@@ -125,6 +125,7 @@ export default function Home() {
   const [intake, setIntake] = useState(blankIntake());
   const [pasteText, setPasteText] = useState("");
   const [parsing, setParsing] = useState(false);
+  const [parseNotice, setParseNotice] = useState("");
   const [saveToHistory, setSaveToHistory] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -188,14 +189,14 @@ export default function Home() {
 
   function openGenerate(id) {
     setGenId(id); setIntake(blankIntake()); setPasteText(""); setSaveToHistory(true);
-    setSheet(null); setError(""); setView("generate");
+    setSheet(null); setError(""); setParseNotice(""); setView("generate");
   }
 
   const updateIntake = (key, val) => setIntake((p) => ({ ...p, [key]: val }));
 
   async function autoSortPaste() {
     if (!pasteText.trim()) return;
-    setParsing(true); setError("");
+    setParsing(true); setError(""); setParseNotice("");
     try {
       const res = await fetch("/api/parse-intake", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -204,6 +205,7 @@ export default function Home() {
       const data = await res.json();
       if (data.error) { setError(data.error); }
       else if (data.intake) {
+        if (data.notice) setParseNotice(data.notice);
         // Merge: fill empty fields, append to ones that already have content.
         setIntake((prev) => {
           const next = { ...prev };
@@ -443,11 +445,12 @@ export default function Home() {
             <Section title={`Generate materials for ${students[genId].name}`} subtitle={`${getStudentLevel(students[genId]) || "Level TBD"} · ${students[genId].nativeLanguage || "L1 unknown"}`}>
               <Field label="Paste a Granola summary (optional)">
                 <textarea value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={4}
-                  placeholder={"Paste a whole class summary here and click ‘Auto-sort into fields’ — the app sorts it into the boxes below for you to tweak. Or just fill the fields directly."} />
-                <div style={{ marginTop: 8 }}>
+                  placeholder={"Paste the whole recipe summary here and click ‘Sort into fields’ — the app splits it on the seven section headers, exactly as written. Or just fill the fields directly."} />
+                <div style={{ marginTop: 8, display: "flex", gap: 10, alignItems: "center" }}>
                   <button className="btn btn-secondary btn-sm" onClick={autoSortPaste} disabled={parsing || !pasteText.trim()}>
-                    {parsing ? <><span className="spinner" /> Sorting…</> : "↧ Auto-sort into fields"}
+                    {parsing ? <><span className="spinner" /> Sorting…</> : "↧ Sort into fields"}
                   </button>
+                  {parseNotice && <span style={{ color: "#a05e03", fontSize: 13 }}>{parseNotice}</span>}
                 </div>
               </Field>
             </Section>
