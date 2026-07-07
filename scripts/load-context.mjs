@@ -8,8 +8,20 @@
 // contains them. Safe to re-run — it upserts by key.
 //
 // Run with:  node --env-file=.env.local scripts/load-context.mjs
+//
+// Modes:
+//   (no flag)   load the files into the LIVE keys (production + preview read them)
+//   --draft     load into "<key>:draft" keys — only preview/local read drafts,
+//               production keeps the current live copy (safe way to test edits)
+//   --promote   copy every draft over its live key and delete the draft
 import { readFileSync } from "node:fs";
 import { neon } from "@neondatabase/serverless";
+
+const MODE = process.argv.includes("--promote")
+  ? "promote"
+  : process.argv.includes("--draft")
+    ? "draft"
+    : "live";
 
 const METHODOLOGY = "_reference/nicolengua-methodology.md";
 const L1_DIR = "_reference/L1 Interference Guides";
@@ -49,6 +61,27 @@ async function main() {
     )
   `;
 
+  if (MODE === "promote") {
+    const drafts = await sql`SELECT key, label, body FROM context_docs WHERE key LIKE '%:draft'`;
+    if (drafts.length === 0) {
+      console.log("No drafts to promote.");
+      return;
+    }
+    for (const d of drafts) {
+      const liveKey = d.key.replace(/:draft$/, "");
+      await sql`
+        INSERT INTO context_docs (key, label, body, updated_at)
+        VALUES (${liveKey}, ${d.label.replace(/ \(draft\)$/, "")}, ${d.body}, now())
+        ON CONFLICT (key) DO UPDATE
+        SET label = EXCLUDED.label, body = EXCLUDED.body, updated_at = now()
+      `;
+      await sql`DELETE FROM context_docs WHERE key = ${d.key}`;
+      console.log(`  ✓ promoted ${d.key} -> ${liveKey} (${d.body.length.toLocaleString()} chars)`);
+    }
+    console.log(`\nPromoted ${drafts.length} draft(s) to live.`);
+    return;
+  }
+
   const docs = [];
   docs.push({
     key: "methodology",
@@ -64,15 +97,17 @@ async function main() {
   }
 
   for (const d of docs) {
+    const key = MODE === "draft" ? `${d.key}:draft` : d.key;
+    const label = MODE === "draft" ? `${d.label} (draft)` : d.label;
     await sql`
       INSERT INTO context_docs (key, label, body, updated_at)
-      VALUES (${d.key}, ${d.label}, ${d.body}, now())
+      VALUES (${key}, ${label}, ${d.body}, now())
       ON CONFLICT (key) DO UPDATE
       SET label = EXCLUDED.label, body = EXCLUDED.body, updated_at = now()
     `;
-    console.log(`  ✓ ${d.key.padEnd(22)} ${d.body.length.toLocaleString()} chars  (${d.label})`);
+    console.log(`  ✓ ${key.padEnd(22)} ${d.body.length.toLocaleString()} chars  (${label})`);
   }
-  console.log(`\nLoaded ${docs.length} context documents into the database.`);
+  console.log(`\nLoaded ${docs.length} context documents into the database${MODE === "draft" ? " AS DRAFTS (preview only)" : ""}.`);
 }
 
 main().catch((e) => {
